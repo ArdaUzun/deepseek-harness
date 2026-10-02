@@ -1,0 +1,154 @@
+# Fork-only: build Linux Desktop AppImages for each upstream dsh release and publish them as this
+# repository's latest GitHub release, which installed AppImages poll through releases/latest/download/.
+name: Linux Desktop release
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream dsh-v* tag to build; defaults to the newest upstream release'
+        required: false
+      force:
+        description: Rebuild even when this tag and patch were already released
+        type: boolean
+        default: false
+
+concurrency:
+  group: linux-desktop-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPOSITORY: deepseek-ai/deepseek-harness
+  PATCH_BRANCH: linux-desktop
+
+jobs:
+  resolve:
+    if: github.repository != 'deepseek-ai/deepseek-harness'
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      upstream_tag: ${{ steps.plan.outputs.upstream_tag }}
+      patch_sha: ${{ steps.plan.outputs.patch_sha }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PATCH_BRANCH }}
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-}"
+          if [ -z "$tag" ]; then
+            tag=$(gh api "repos/$UPSTREAM_REPOSITORY/releases?per_page=30" \
+              --jq '[.[] | select(.draft | not) | select(.tag_name | startswith("dsh-v"))][0].tag_name')
+          fi
+          case "$tag" in dsh-v*) ;; *) echo "::error::no upstream dsh-v* release found ($tag)"; exit 1 ;; esac
+          patch_sha=$(git rev-parse HEAD)
+          marker="upstream=$tag patch=$patch_sha"
+          if [ "${FORCE:-false}" != "true" ] && gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name | startswith("linux-v")) | .body' | grep -qF "$marker"; then
+            echo "Already released $marker"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          product="${tag#dsh-v}"
+          # Build versions extend the product version so rebuilds of one upstream release still order as updates.
+          case "$product" in *-*) prefix="$product." ;; *) prefix="$product-test." ;; esac
+          version="$prefix$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
+          {
+            echo "build=true"
+            echo "upstream_tag=$tag"
+            echo "patch_sha=$patch_sha"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $version from $tag with patch $patch_sha"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PATCH_BRANCH }}
+          fetch-depth: 0
+      - name: Apply Linux patch to upstream release
+        env:
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          PATCH_SHA: ${{ needs.resolve.outputs.patch_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'linux-desktop-release'
+          git config user.email 'linux-desktop-release@users.noreply.github.com'
+          git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
+          git fetch --no-tags upstream master "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
+          patches=$(git rev-list --reverse --no-merges "upstream/master..$PATCH_SHA")
+          echo "Patch commits:"; git log --oneline --no-walk $patches
+          git checkout --detach "$UPSTREAM_TAG"
+          git cherry-pick $patches
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Configure Linux package
+        run: |
+          {
+            echo 'DSH_DESKTOP_APP_ID=com.deepseek.harness'
+            echo "DSH_DESKTOP_LINUX_UPDATE_URL=https://github.com/$GITHUB_REPOSITORY/releases/latest/download/"
+          } > apps/desktop/.env.linux
+      - name: Package AppImage
+        run: pnpm --filter @deepseek-ai/dsh-desktop run package:linux:${{ matrix.arch }} --build-version '${{ needs.resolve.outputs.version }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/.desktop-build/targets/linux-${{ matrix.arch }}/artifacts/*.AppImage
+            apps/desktop/.desktop-build/targets/linux-${{ matrix.arch }}/artifacts/nightly-linux*.yml
+
+  publish:
+    needs: [resolve, build]
+    # Publish whichever architectures built; x64 is required below.
+    if: ${{ !cancelled() && needs.resolve.outputs.build == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          PATCH_SHA: ${{ needs.resolve.outputs.patch_sha }}
+        run: |
+          set -euo pipefail
+          ls -la artifacts
+          test -f artifacts/nightly-linux.yml || { echo "::error::x64 build produced no nightly-linux.yml"; exit 1; }
+          notes="Linux AppImage of upstream [$UPSTREAM_TAG](https://github.com/$UPSTREAM_REPOSITORY/releases/tag/$UPSTREAM_TAG) with the Linux patch.
+
+          upstream=$UPSTREAM_TAG patch=$PATCH_SHA"
+          gh release create "linux-v$VERSION" artifacts/* --repo "$GITHUB_REPOSITORY" --target "$PATCH_SHA" \
+            --title "DeepSeek Harness $VERSION (Linux)" --notes "$notes" --latest
