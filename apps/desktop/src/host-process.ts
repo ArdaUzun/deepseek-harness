@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { desktopNodeEnvironment } from './node-environment.ts'
+import { forwardConsoleOutput } from './console-output.ts'
 
 interface ReadyEvent {
   readonly type: 'ready'
@@ -202,7 +203,7 @@ export class DesktopHostProcess {
     this.child = child
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-MAX_HOST_DIAGNOSTIC_CHARS) })
-    child.stdout?.pipe(process.stdout)
+    if (child.stdout !== null) forwardConsoleOutput(child.stdout)
     child.on('message', (message: unknown) => {
       if (!isDesktopHostEvent(message)) {
         this.fail(new Error('dsh desktop host sent an invalid IPC event'))
