@@ -227,9 +227,17 @@ Release automation uses fixed target commands so runtime preparation, dsh prepar
 pnpm run package:desktop:mac:arm64
 pnpm run package:desktop:mac:x64
 pnpm run package:desktop:win:x64
+pnpm run package:desktop:linux:x64
+pnpm run package:desktop:linux:arm64
 ```
 
-The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
+The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Each Linux command requires a Linux host of the same architecture.
+
+### Linux AppImage
+
+Linux targets produce an unsigned AppImage and are not published to the COS deployment. Packaging reads `apps/desktop/.env.linux`, copied from the [Linux template](.env.linux.example); it needs only the application ID and has no mandatory-update policy. When `DSH_DESKTOP_LINUX_UPDATE_URL` names an HTTPS directory, such as a GitHub repository's `releases/latest/download/`, the application checks that directory's `nightly-linux.yml` (`nightly-linux-arm64.yml` on arm64) and replaces its AppImage in place; without it, the build has no update source. Publishing the AppImage and channel file to that directory is the operator's responsibility.
+
+Linux Electron links the system glib, whose symbols collide with the glib inside Sharp's libvips and crash image decoding ([electron/electron#46323](https://github.com/electron/electron/issues/46323)). Linux therefore runs the Host, package scripts, and the `dsh` command on the primary runtime's Node instead of Electron's, and packages the application without ASAR because that Node cannot read archives. Runtime preparation records and smoke-tests that Node version.
 
 Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Electron archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
 

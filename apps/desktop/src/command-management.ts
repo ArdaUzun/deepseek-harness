@@ -6,6 +6,7 @@ import { userInfo } from 'node:os'
 import { promisify } from 'node:util'
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import type { DesktopMessages } from './locale.ts'
+import { primaryRuntimeNode } from './node-environment.ts'
 import type { UpdateDialogOptions } from './update-dialog.ts'
 
 interface CommandState {
@@ -136,7 +137,7 @@ export class DesktopCommandManager {
   async idle(): Promise<void> { await this.operation }
 
   private async worker(operation: string, expected?: string, elevated = false): Promise<CommandState> {
-    const node = join(this.options.resources, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', process.platform === 'win32' ? 'node.exe' : 'node')
+    const node = primaryRuntimeNode(join(this.options.resources, 'runtime', 'primary-runtime'))
     const entry = join(this.options.resources, 'runtime', 'cli', 'command-manager.js')
     let stdout: string
     try {

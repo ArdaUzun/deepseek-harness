@@ -53,6 +53,15 @@ export function resolveDesktopAutoUpdateTarget(platform, arch) {
 }
 
 /**
+ * Report whether a Desktop build target publishes through the COS update deployment.
+ * @param {string} target - Desktop build target name.
+ * @returns {boolean} True for targets with a COS update feed.
+ */
+export function isDesktopAutoUpdateTarget(target) {
+  return UPDATE_TARGETS.has(target)
+}
+
+/**
  * Return the local completion record filename for one packaged target.
  * @param {'mac-arm64' | 'mac-x64' | 'win-x64'} target - Supported release target.
  * @returns {string} Filename stored beside electron-builder artifacts.

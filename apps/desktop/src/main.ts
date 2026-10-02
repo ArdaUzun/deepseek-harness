@@ -34,6 +34,7 @@ import { readDeviceInfo } from './device-info.ts'
 import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
+import { desktopNodeExecutable } from './node-environment.ts'
 import { DesktopCommandManager } from './command-management.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
@@ -148,9 +149,13 @@ interface RuntimeResources {
   readonly dsh: string
 }
 
+function primaryRuntimeDirectory(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'runtime', 'primary-runtime') : developmentPrimaryRuntime()
+}
+
 function runtimeResources(): RuntimeResources {
   const development = !app.isPackaged
-  const node = process.execPath
+  const node = process.platform === 'linux' ? desktopNodeExecutable(process.execPath, primaryRuntimeDirectory()) : process.execPath
   const nodeBin = development ? join(app.getAppPath(), 'scripts', 'node-bin') : join(process.resourcesPath, 'runtime', 'bin')
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
     ?? (development ? join(app.getAppPath(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
@@ -319,9 +324,7 @@ async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
   const development = !app.isPackaged
-  const primaryRuntime = development
-    ? developmentPrimaryRuntime()
-    : join(process.resourcesPath, 'runtime', 'primary-runtime')
+  const primaryRuntime = primaryRuntimeDirectory()
   const activeProject = paths.profile
   const manager = new DesktopProjectManager(paths, resources)
   // Dock and Finder launches inherit only launchd's environment; every Host shares one login-shell read.

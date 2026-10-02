@@ -229,9 +229,17 @@ pnpm run package:desktop
 pnpm run package:desktop:mac:arm64
 pnpm run package:desktop:mac:x64
 pnpm run package:desktop:win:x64
+pnpm run package:desktop:linux:x64
+pnpm run package:desktop:linux:arm64
 ```
 
-macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
+macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。每个 Linux 命令要求相同架构的 Linux 主机。
+
+### Linux AppImage
+
+Linux 目标生成未签名的 AppImage，不发布到 COS 部署。打包读取从 [Linux 模板](.env.linux.example)复制的 `apps/desktop/.env.linux`；它只需要应用 ID，没有强制更新策略。`DSH_DESKTOP_LINUX_UPDATE_URL` 指定 HTTPS 目录（例如 GitHub 仓库的 `releases/latest/download/`）时，应用检查该目录下的 `nightly-linux.yml`（arm64 上为 `nightly-linux-arm64.yml`）并原地替换自身 AppImage；未设置时构建没有更新源。将 AppImage 和渠道文件发布到该目录由发布者负责。
+
+Linux 版 Electron 链接系统 glib，其符号与 Sharp 的 libvips 内置的 glib 冲突，导致图像解码崩溃（[electron/electron#46323](https://github.com/electron/electron/issues/46323)）。因此 Linux 在主运行时的 Node 而不是 Electron 的 Node 上运行 Host、包脚本和 `dsh` 命令，并且不使用 ASAR 打包应用，因为该 Node 无法读取归档。运行时准备会记录并冒烟测试该 Node 版本。
 
 每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树、pnpm 准备状态、未打包应用、更新元数据和最终产物。Electron 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 
