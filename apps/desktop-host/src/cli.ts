@@ -39,5 +39,7 @@ if (import.meta.main) {
     await installWindowsCliSignals()
   }
   const runtimeDir = resolve(import.meta.dirname, '../../../..')
-  await runDesktopCli(join(dirname(runtimeArchivePath(runtimeDir) ?? runtimeDir), 'runtime'))
+  // Linux packages without ASAR, so its runtime tree sits in resources/app beside resources/runtime.
+  const container = runtimeArchivePath(runtimeDir) ?? (basename(dirname(runtimeDir)) === 'app' ? dirname(runtimeDir) : runtimeDir)
+  await runDesktopCli(join(dirname(container), 'runtime'))
 }

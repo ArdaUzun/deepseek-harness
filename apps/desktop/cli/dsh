@@ -11,4 +11,11 @@ while [ -L "$launcher" ]; do
   esac
 done
 resources=$(CDPATH= cd -- "$(dirname -- "$launcher")/../../.." && pwd -P)
-ELECTRON_RUN_AS_NODE=1 exec "$resources/../MacOS/DeepSeek Harness" --expose-internals "$resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js" "$@"
+# macOS runs the CLI on Electron's Node; Linux uses the primary runtime's Node because Linux Electron's
+# system glib crashes Sharp (electron/electron#46323).
+executable="$resources/../MacOS/DeepSeek Harness"
+[ -x "$executable" ] || executable="$resources/runtime/primary-runtime/dependencies/node/bin/node"
+# Linux packages the application without ASAR because plain Node cannot read archives.
+app="$resources/app.asar"
+[ -d "$resources/app" ] && app="$resources/app"
+ELECTRON_RUN_AS_NODE=1 exec "$executable" --expose-internals "$app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js" "$@"
