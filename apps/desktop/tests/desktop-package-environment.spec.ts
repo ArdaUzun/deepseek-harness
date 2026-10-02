@@ -7,6 +7,7 @@ import { resolveWindowsPackageSettings } from '../scripts/windows-package-settin
 
 const WINDOWS = { platform: 'win32', arch: 'x64' } as const
 const MACOS = { platform: 'darwin', arch: 'arm64' } as const
+const LINUX = { platform: 'linux', arch: 'x64' } as const
 const POLICY = { DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
   DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }) }
 const RELEASE = { ...POLICY, DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
@@ -115,6 +116,20 @@ describe('Desktop local packaging configuration', () => {
       await writeFile(join(directory, '.env.windows'), 'APPLE_APP_SPECIFIC_PASSWORD=secret-sentinel\n')
       expect(() => loadDesktopPackageEnvironment('win32', {}, directory)).toThrow(/unsupported setting APPLE_APP_SPECIFIC_PASSWORD/u)
       expect(() => loadDesktopPackageEnvironment('win32', {}, directory)).not.toThrow(/secret-sentinel/u)
+    })
+  })
+
+  it('reads Linux settings from their own file and needs no policy, update deployment, or signing', async () => {
+    await withDirectory(async (directory) => {
+      const feed = 'https://github.com/example/harness/releases/latest/download/'
+      await writeFile(join(directory, '.env.linux'), `DSH_DESKTOP_APP_ID=com.example.desktop\nDSH_DESKTOP_LINUX_UPDATE_URL=${feed}\n`)
+      const environment = loadDesktopPackageEnvironment('linux', { DSH_DESKTOP_LINUX_UPDATE_URL: 'https://stale.example.com/' }, directory)
+      expect(environment).toEqual({ DSH_DESKTOP_APP_ID: 'com.example.desktop', DSH_DESKTOP_LINUX_UPDATE_URL: feed })
+      expect(() => { validateDesktopPackageEnvironment(environment, LINUX) }).not.toThrow()
+      expect(() => { validateDesktopPackageEnvironment({ ...environment, DSH_DESKTOP_LINUX_UPDATE_URL: 'http://example.com/' }, LINUX) })
+        .toThrow(/DSH_DESKTOP_LINUX_UPDATE_URL/u)
+      await writeFile(join(directory, '.env.linux'), 'DSH_DESKTOP_WINDOWS_TOKEN_PIN=secret-sentinel\n')
+      expect(() => loadDesktopPackageEnvironment('linux', {}, directory)).toThrow(/unsupported setting DSH_DESKTOP_WINDOWS_TOKEN_PIN/u)
     })
   })
 
