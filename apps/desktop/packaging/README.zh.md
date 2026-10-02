@@ -17,6 +17,7 @@ description: "在本地或 Windows／macOS Actions 中生成 Desktop 安装包�
 - [配置与本地构建](#configuration-and-local-builds)
 - [Windows Actions 打包](#windows-actions)
 - [macOS 自托管打包](#macos-actions)
+- [Linux AppImage](#linux-appimage)
 - [未签名 Windows 测试安装包](#unsigned-windows-test-installer)
 - [无发布签名的本地 macOS DMG](#local-macos-dmg-without-release-signing)
 - [macOS 发布签名与诊断](#macos-release-signing)
@@ -91,9 +92,11 @@ pnpm run package:desktop
 pnpm run package:desktop:mac:arm64
 pnpm run package:desktop:mac:x64
 pnpm run package:desktop:win:x64
+pnpm run package:desktop:linux:x64
+pnpm run package:desktop:linux:arm64
 ```
 
-macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
+macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。每个 Linux 命令要求相同架构的 Linux 主机。
 
 macOS 正式发布和本地未签名 DMG 都通过 [electron-builder 配置](../scripts/electron-builder-config.mjs)中的 `dmg.format: 'ULMO'` 使用 LZMA 压缩。[构建时补丁](../../../patches/app-builder-lib@26.17.0.patch)为固定版本 builder 的校验规则和 TypeScript 声明添加此格式。
 
@@ -133,6 +136,14 @@ bash apps/desktop/scripts/macos-runner-service.sh status "$HOME/dsh-ci/runner"
 ```
 
 安装脚本将启动脚本复制到 `runner/dsh-service`，将服务 PATH 设为 Node 24 和系统工具，并使用 GitHub 的 `svc.sh` 与 `runsvc.sh`。LaunchAgent 在 SSH 断开后继续运行，但重启后需要该账户登录桌面，注销桌面时停止。FileVault 磁盘解锁仍由操作人员完成，这不提供无人值守开机。日志位于 `runner/dsh-service/stdout.log` 和 `stderr.log`；验收时确认出现 `Connected to GitHub` 与 `Listening for Jobs`。更新已安装的启动脚本或工具路径时，等待 runner 空闲，依次执行 `stop`、`uninstall`，再重新安装。这两个操作都不会注销 runner 或删除打包凭据。卸载保留 `runner/dsh-service`（包括日志）和显式 `.path`；重新安装会替换启动快照和 PATH。
+
+<a id="linux-appimage"></a>
+
+## Linux AppImage
+
+Linux 目标生成未签名的 AppImage，不发布到 COS 部署。打包读取从 [Linux 模板](../.env.linux.example)复制的 `apps/desktop/.env.linux`；它只需要应用 ID，没有强制更新策略。`DSH_DESKTOP_LINUX_UPDATE_URL` 指定 HTTPS 目录（例如 GitHub 仓库的 `releases/latest/download/`）时，应用检查该目录下的 `nightly-linux.yml`（arm64 上为 `nightly-linux-arm64.yml`）并原地替换自身 AppImage；未设置时构建没有更新源。将 AppImage 和渠道文件发布到该目录由发布者负责。
+
+Linux 版 Electron 链接系统 glib，其符号与 Sharp 的 libvips 内置的 glib 冲突，导致图像解码崩溃（[electron/electron#46323](https://github.com/electron/electron/issues/46323)）。因此 Linux 在主运行时的 Node 而不是 Electron 的 Node 上运行 Host、包脚本和 `dsh` 命令，并且不使用 ASAR 打包应用，因为该 Node 无法读取归档。运行时准备会记录并冒烟测试该 Node 版本。
 
 <a id="unsigned-windows-test-installer"></a>
 

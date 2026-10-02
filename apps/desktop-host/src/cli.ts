@@ -1,6 +1,6 @@
 /** Public dsh commands using the immutable runtime carried by the Desktop installation. */
 
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { runCli } from '@deepseek-ai/dsh/lib/bin.js'
 import { installOfficeEngineResolution, runtimeArchivePath } from './office-engine.ts'
 
@@ -32,5 +32,7 @@ if (import.meta.main) {
     await installWindowsCliSignals()
   }
   const runtimeDir = resolve(import.meta.dirname, '../../../..')
-  await runDesktopCli(runtimeDir, join(dirname(runtimeArchivePath(runtimeDir) ?? runtimeDir), 'runtime'))
+  // Linux packages without ASAR, so its runtime tree sits in resources/app beside resources/runtime.
+  const container = runtimeArchivePath(runtimeDir) ?? (basename(dirname(runtimeDir)) === 'app' ? dirname(runtimeDir) : runtimeDir)
+  await runDesktopCli(runtimeDir, join(dirname(container), 'runtime'))
 }

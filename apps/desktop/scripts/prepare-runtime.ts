@@ -13,13 +13,15 @@ import { packagingStep } from './packaging-step.mjs'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 import { prepareDesktopCli } from './prepare-cli.ts'
 import { prepareCommandLink } from './prepare-command-link.ts'
+import { electronExecutable } from './electron-executable.ts'
+import { desktopNodeExecutable } from '../src/node-environment.ts'
 
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
 const RUNTIME_ROOT = BUILD_PATHS.runtime
 
 type DesktopTarget = ReturnType<typeof desktopTargetPlatform>
 
-/** Extract the target Electron distribution and return its embedded Node version. */
+/** Extract the target Electron distribution and return its executable. */
 async function prepareElectron({ platform, arch }: DesktopTarget): Promise<string> {
   const require = createRequire(import.meta.url)
   const { version } = require('electron/package.json') as { version: string }
@@ -27,10 +29,7 @@ async function prepareElectron({ platform, arch }: DesktopTarget): Promise<strin
     () => downloadArtifact({ version, platform, arch, artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads }))
   rmSync(BUILD_PATHS.electron, { recursive: true, force: true })
   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'extract:electron', () => extractZip(archive, { dir: BUILD_PATHS.electron }))
-  const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
-  return execFileSync(executable, ['-p', 'process.versions.node'], {
-    encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  }).trim()
+  return join(BUILD_PATHS.electron, electronExecutable(platform))
 }
 
 function prepareCli({ platform, arch }: DesktopTarget): void {
@@ -53,9 +52,12 @@ async function main(): Promise<void> {
   const target = desktopTargetPlatform(resolveDesktopBuildTarget())
   rmSync(RUNTIME_ROOT, { recursive: true, force: true })
   mkdirSync(RUNTIME_ROOT, { recursive: true })
-  const nodeVersion = await prepareElectron(target)
+  const electron = await prepareElectron(target)
   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:primary-runtime',
     () => preparePrimaryRuntime({ deferSmoke: values['defer-primary-runtime-smoke'] }))
+  // The recorded Node version belongs to whichever executable runs the Host, which on Linux is the primary runtime's Node.
+  const nodeVersion = execFileSync(desktopNodeExecutable(electron, join(RUNTIME_ROOT, 'primary-runtime'), target.platform),
+    ['-p', 'process.versions.node'], { encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).trim()
   const { pnpm } = await readPrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
   if (pnpm === undefined) throw new Error('desktop runtime: primary-runtime manifest has no pnpm version')
   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:cli', async () => { prepareCli(target) })
