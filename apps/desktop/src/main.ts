@@ -985,11 +985,13 @@ async function main(): Promise<void> {
   }
   refreshApplicationMenu()
   const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' || process.platform === 'linux') {
     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
+    // Linux shows it only where a StatusNotifierItem host such as a desktop panel or bar tray module runs.
+    const linuxIconPath = development ? join(app.getAppPath(), 'resources', 'icon-windows.png') : join(process.resourcesPath, 'icon.png')
     try {
-      tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
-        open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
+      tray = new DesktopTray({ locale: currentDesktopLocale, open: () => { focusPrimaryWindow() }, quit: () => { app.quit() },
+        ...process.platform === 'linux' ? { iconPath: linuxIconPath, iconSize: 64 } : { iconPath: trayIconPath } })
     } catch (error) { console.warn('desktop tray: unavailable', error) }
   }
   const backgroundNotice = process.platform === 'win32'
