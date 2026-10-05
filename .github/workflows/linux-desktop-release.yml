@@ -4,7 +4,8 @@ name: Linux Desktop release
 
 on:
   schedule:
-    - cron: '17 */6 * * *'
+    # Every other day; upstream releases are a few days apart, and Run workflow builds on demand.
+    - cron: '17 6 */2 * *'
   workflow_dispatch:
     inputs:
       upstream_tag:
@@ -128,8 +129,8 @@ jobs:
 
   publish:
     needs: [resolve, build]
-    # Publish whichever architectures built; x64 is required below.
-    if: ${{ !cancelled() && needs.resolve.outputs.build == 'true' }}
+    # Both architectures must build, so a failed patch or build reports once and publishes nothing.
+    if: needs.resolve.outputs.build == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
